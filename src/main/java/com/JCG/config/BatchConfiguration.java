@@ -8,6 +8,8 @@ import org.springframework.batch.core.*;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.core.explore.JobExplorer;
+import org.springframework.batch.core.explore.support.SimpleJobExplorer;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.launch.support.SimpleJobLauncher;
 import org.springframework.batch.core.repository.JobRepository;
@@ -20,9 +22,9 @@ import org.springframework.batch.item.file.mapping.DefaultLineMapper;
 import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
 import org.springframework.batch.support.transaction.ResourcelessTransactionManager;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.core.io.ClassPathResource;
 
 import javax.persistence.EntityManagerFactory;
@@ -43,8 +45,8 @@ public class BatchConfiguration {
     PersonRepository personRepository;
 
     @Bean
-    public JobBuilderFactory getCustomizedJobBuilderFactory(
-            @Qualifier("customizedJobRepository") JobRepository jobRepository) {
+    @Primary
+    public JobBuilderFactory getCustomizedJobBuilderFactory(JobRepository jobRepository) {
         return new JobBuilderFactory(jobRepository);
     }
 
@@ -87,9 +89,9 @@ public class BatchConfiguration {
     }
 
     @Bean
-    public Job importUserJob(@Qualifier("getCustomizedJobBuilderFactory") JobBuilderFactory jobBuilderFactory , JobExecutionListener listener) {
+    public Job importUserJob(JobBuilderFactory jobBuilderFactory, JobExecutionListener listener) {
         return jobBuilderFactory.get("importUserJob")
-                //.incrementer(new RunIdIncrementer())
+                .incrementer(new RunIdIncrementer())
                 .listener(listener)
                 .flow(step1())
                 .end()
@@ -136,14 +138,27 @@ public class BatchConfiguration {
     }
 
     @Bean
-    public JobRepository customizedJobRepository(ResourcelessTransactionManager transactionManager) throws Exception {
-        MapJobRepositoryFactoryBean mapJobRepositoryFactoryBean = new MapJobRepositoryFactoryBean(transactionManager);
-        mapJobRepositoryFactoryBean.setTransactionManager(transactionManager);
-        return mapJobRepositoryFactoryBean.getObject();
+    public MapJobRepositoryFactoryBean mapJobRepositoryFactory(ResourcelessTransactionManager transactionManager)
+            throws Exception {
+        MapJobRepositoryFactoryBean factory = new MapJobRepositoryFactoryBean(transactionManager);
+        factory.afterPropertiesSet();
+        return factory;
     }
 
     @Bean
-    public SimpleJobLauncher jobLauncher(@Qualifier("customizedJobRepository") JobRepository jobRepository) {
+    public JobRepository jobRepository(MapJobRepositoryFactoryBean repositoryFactory) throws Exception {
+        return repositoryFactory.getObject();
+    }
+
+    @Bean
+    public JobExplorer jobExplorer(MapJobRepositoryFactoryBean repositoryFactory) {
+        return new SimpleJobExplorer(repositoryFactory.getJobInstanceDao(), repositoryFactory.getJobExecutionDao(),
+                repositoryFactory.getStepExecutionDao(), repositoryFactory.getExecutionContextDao());
+    }
+
+
+    @Bean
+    public SimpleJobLauncher jobLauncher(JobRepository jobRepository) {
         SimpleJobLauncher simpleJobLauncher = new SimpleJobLauncher();
         simpleJobLauncher.setJobRepository(jobRepository);
         return simpleJobLauncher;
